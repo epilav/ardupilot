@@ -20,6 +20,8 @@ parser.add_argument(
     '--bootloader', action='store_true', default=False, help='configure for bootloader')
 parser.add_argument(
     'hwdef', type=str, default=None, help='hardware definition file')
+parser.add_argument(
+    '--params', type=str, default=None, help='user default params path')
 
 args = parser.parse_args()
 
@@ -716,10 +718,17 @@ def write_mcu_config(f):
         env_vars['CPU_FLAGS'] = ["-mcpu=%s" % cortex]
         build_info['MCU'] = cortex
     else:
-        # default to F4
         cortex = "cortex-m4"
         env_vars['CPU_FLAGS'] = ["-mcpu=%s" % cortex, "-mfpu=fpv4-sp-d16", "-mfloat-abi=hard"]
         build_info['MCU'] = cortex
+
+    env_vars['CORTEX'] = cortex
+
+    if not args.bootloader:
+        if cortex == 'cortex-m4':
+            env_vars['CPU_FLAGS'].append('-DARM_MATH_CM4')
+        elif cortex == 'cortex-m7':
+            env_vars['CPU_FLAGS'].append('-DARM_MATH_CM7')
 
     if not mcu_series.startswith("STM32F1") and not args.bootloader:
         env_vars['CPU_FLAGS'].append('-u_printf_float')
@@ -1774,11 +1783,19 @@ def build_peripheral_list():
 def write_env_py(filename):
     '''write out env.py for environment variables to control the build process'''
 
-    # see if board has a defaults.parm file
+    # see if board has a defaults.parm file or a --default-parameters file was specified
     defaults_filename = os.path.join(os.path.dirname(args.hwdef), 'defaults.parm')
-    if os.path.exists(defaults_filename) and not args.bootloader:
-        print("Adding defaults.parm")
-        env_vars['DEFAULT_PARAMETERS'] = os.path.abspath(defaults_filename)
+    defaults_path = os.path.join(os.path.dirname(args.hwdef), args.params)
+
+    if not args.bootloader:
+        if os.path.exists(defaults_path):
+            env_vars['DEFAULT_PARAMETERS'] = os.path.abspath(defaults_path)
+            print("Default parameters path from command line: %s" % defaults_path)
+        elif os.path.exists(defaults_filename):
+            env_vars['DEFAULT_PARAMETERS'] = os.path.abspath(defaults_filename)
+            print("Default parameters path from hwdef: %s" % defaults_filename)
+        else:
+            print("No default parameter file found")
 
     # CHIBIOS_BUILD_FLAGS is passed to the ChibiOS makefile
     env_vars['CHIBIOS_BUILD_FLAGS'] = ' '.join(build_flags)

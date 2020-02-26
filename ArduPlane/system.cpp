@@ -1,5 +1,4 @@
 #include "Plane.h"
-#include <AP_Common/AP_FWVersion.h>
 
 /*****************************************************************************
 *   The init_ardupilot function processes everything we need for an in - air restart
@@ -15,18 +14,6 @@ static void failsafe_check_static()
 
 void Plane::init_ardupilot()
 {
-    // initialise serial port
-    serial_manager.init_console();
-
-    hal.console->printf("\n\nInit %s"
-                        "\n\nFree RAM: %u\n",
-                        AP::fwversion().fw_string,
-                        (unsigned)hal.util->available_memory());
-
-    //
-    // Check the EEPROM format version before loading any parameters from EEPROM
-    //
-    load_parameters();
 
 #if STATS_ENABLED == ENABLED
     // initialise stats module
@@ -43,16 +30,6 @@ void Plane::init_ardupilot()
 #endif
 
     ins.set_log_raw_bit(MASK_LOG_IMU_RAW);
-
-    set_control_channels();
-
-    mavlink_system.sysid = g.sysid_this_mav;
-
-    // initialise serial ports
-    serial_manager.init();
-    gcs().setup_console();
-
-    register_scheduler_delay_callback();
 
     // setup any board specific drivers
     BoardConfig.init();
@@ -84,6 +61,8 @@ void Plane::init_ardupilot()
 
     // initialise battery monitoring
     battery.init();
+
+    rssi.init();
 
     rpm_sensor.init();
 
@@ -501,6 +480,12 @@ void Plane::update_dynamic_notch()
 #ifdef HAVE_AP_BLHELI_SUPPORT
         case HarmonicNotchDynamicMode::UpdateBLHeli: // BLHeli based tracking
             ins.update_harmonic_notch_freq_hz(MAX(ref_freq, AP_BLHeli::get_singleton()->get_average_motor_frequency_hz() * ref));
+            break;
+#endif
+#if HAL_GYROFFT_ENABLED
+        case HarmonicNotchDynamicMode::UpdateGyroFFT: // FFT based tracking
+            // set the harmonic notch filter frequency scaled on measured frequency
+            ins.update_harmonic_notch_freq_hz(gyro_fft.get_weighted_noise_center_freq_hz());
             break;
 #endif
         case HarmonicNotchDynamicMode::Fixed: // static

@@ -56,18 +56,11 @@ class Board:
                 LUA_32BITS = 1,
                 )
 
-            env.ROMFS_FILES += [
-                ('sandbox.lua', 'libraries/AP_Scripting/scripts/sandbox.lua'),
-                ]
-
             env.AP_LIBRARIES += [
                 'AP_Scripting',
                 'AP_Scripting/lua/src',
                 ]
 
-            env.CXXFLAGS += [
-                '-DHAL_HAVE_AP_ROMFS_EMBEDDED_H'
-                ]
         else:
             cfg.options.disable_scripting = True;
 
@@ -497,6 +490,7 @@ class chibios(Board):
             '--specs=nano.specs',
             '-specs=nosys.specs',
             '-DCHIBIOS_BOARD_NAME="%s"' % self.name,
+            '-D__USE_CMSIS',
         ]
         env.CXXFLAGS += env.CFLAGS + [
             '-fno-rtti',
@@ -556,6 +550,10 @@ class chibios(Board):
 
         env.GIT_SUBMODULES += [
             'ChibiOS',
+        ]
+
+        env.INCLUDES += [
+            cfg.srcnode.find_dir('libraries/AP_GyroFFT/CMSIS_5/include').abspath()
         ]
 
         try:

@@ -14,17 +14,6 @@ static void failsafe_check_static()
 
 void Sub::init_ardupilot()
 {
-    // initialise serial port
-    serial_manager.init_console();
-
-    hal.console->printf("\n\nInit %s"
-                        "\n\nFree RAM: %u\n",
-                        AP::fwversion().fw_string,
-                        (unsigned)hal.util->available_memory());
-
-    // load parameters from EEPROM
-    load_parameters();
-
     BoardConfig.init();
 #if HAL_WITH_UAVCAN
     BoardConfig_CAN.init();
@@ -47,15 +36,6 @@ void Sub::init_ardupilot()
     celsius.init(1);
 #endif
 
-    // identify ourselves correctly with the ground station
-    mavlink_system.sysid = g.sysid_this_mav;
-    
-    // initialise serial port
-    serial_manager.init();
-
-    // setup first port early to allow BoardConfig to report errors
-    gcs().setup_console();
-
     // init cargo gripper
 #if GRIPPER_ENABLED == ENABLED
     g2.gripper.init();
@@ -72,8 +52,6 @@ void Sub::init_ardupilot()
     battery.init();
 
     barometer.init();
-
-    register_scheduler_delay_callback();
 
     // setup telem slots with serial ports
     gcs().setup_uarts();

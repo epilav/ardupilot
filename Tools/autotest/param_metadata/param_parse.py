@@ -34,7 +34,7 @@ args = parser.parse_args()
 
 # Regular expressions for parsing the parameter metadata
 
-prog_param = re.compile(r"@Param: (\w+).*((?:\n[ \t]*// @(\w+)(?:{([^}]+)})?: (.*))+)(?:\n\n|\n[ \t]+[A-Z])", re.MULTILINE)
+prog_param = re.compile(r"@Param: (\w+).*((?:\n[ \t]*// @(\w+)(?:{([^}]+)})?: (.*))+)(?:\n[ \t]*\n|\n[ \t]+[A-Z])", re.MULTILINE)
 
 # match e.g @Value: 0=Unity, 1=Koala, 17=Liability
 prog_param_fields = re.compile(r"[ \t]*// @(\w+): (.*)")
@@ -53,6 +53,12 @@ vehicle_paths.sort(reverse=True)
 
 vehicles = []
 libraries = []
+
+# AP_Vehicle also has parameters rooted at "", but isn't referenced
+# from the vehicle in any way:
+ap_vehicle_lib = Library("") # the "" is tacked onto the front of param name
+setattr(ap_vehicle_lib, "Path", os.path.join('..', 'libraries', 'AP_Vehicle', 'AP_Vehicle.cpp'))
+libraries.append(ap_vehicle_lib)
 
 error_count = 0
 current_param = None
@@ -125,7 +131,7 @@ for vehicle in vehicles:
         for field in fields:
             field_list.append(field[0])
             if field[0] in known_param_fields:
-                value = re.sub('@PREFIX@', "", field[1])
+                value = re.sub('@PREFIX@', "", field[1]).rstrip()
                 setattr(p, field[0], value)
             else:
                 error("param: unknown parameter metadata field '%s'" % field[0])
@@ -166,7 +172,7 @@ def process_library(vehicle, library, pathprefix=None):
             p_text = f.read()
             f.close()
         else:
-            error("Path %s not found for library %s" % (path, library.name))
+            error("Path %s not found for library %s (fname=%s)" % (path, library.name, libraryfname))
             continue
 
         param_matches = prog_param.findall(p_text)
@@ -279,7 +285,8 @@ def validate(param):
     if (hasattr(param, "Range")):
         rangeValues = param.__dict__["Range"].split(" ")
         if (len(rangeValues) != 2):
-            error("Invalid Range values for %s" % (param.name))
+            error("Invalid Range values for %s (%s)" %
+                  (param.name, param.__dict__["Range"]))
             return
         min_value = rangeValues[0]
         max_value = rangeValues[1]

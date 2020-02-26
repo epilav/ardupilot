@@ -38,9 +38,12 @@ singleton AP_AHRS method airspeed_estimate boolean float'Null
 include AP_Arming/AP_Arming.h
 
 singleton AP_Arming alias arming
-singleton AP_Arming method disarm boolean
+singleton AP_Arming method disarm boolean AP_Arming::Method::SCRIPTING'literal
 singleton AP_Arming method is_armed boolean
 singleton AP_Arming method arm boolean AP_Arming::Method::SCRIPTING'literal
+singleton AP_Arming method get_aux_auth_id boolean uint8_t'Null
+singleton AP_Arming method set_aux_auth_passed void uint8_t 0 UINT8_MAX
+singleton AP_Arming method set_aux_auth_failed void uint8_t 0 UINT8_MAX string
 
 include AP_BattMonitor/AP_BattMonitor.h
 
@@ -144,6 +147,7 @@ singleton GCS method set_message_interval MAV_RESULT'enum uint8_t 0 MAVLINK_COMM
 
 include AP_Vehicle/AP_Vehicle.h
 singleton AP_Vehicle alias vehicle
+singleton AP_Vehicle scheduler-semaphore
 singleton AP_Vehicle method set_mode boolean uint8_t 0 UINT8_MAX ModeReason::SCRIPTING'literal
 singleton AP_Vehicle method get_mode uint8_t
 singleton AP_Vehicle method get_likely_flying boolean
@@ -179,3 +183,13 @@ singleton AP_Baro alias baro
 singleton AP_Baro method get_pressure float
 singleton AP_Baro method get_temperature float
 singleton AP_Baro method get_external_temperature float
+
+include AP_ESC_Telem/AP_ESC_Telem.h
+singleton AP_ESC_Telem alias esc_telem
+singleton AP_ESC_Telem method get_usage_seconds boolean uint8_t 0 NUM_SERVO_CHANNELS uint32_t'Null
+
+include AP_Param/AP_Param.h
+singleton AP_Param alias param
+singleton AP_Param method get boolean string float'Null
+singleton AP_Param method set boolean string float -FLT_MAX FLT_MAX
+singleton AP_Param method set_and_save boolean string float -FLT_MAX FLT_MAX
