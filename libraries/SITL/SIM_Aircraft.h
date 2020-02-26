@@ -166,6 +166,14 @@ protected:
         struct vector3f_array points;
         struct float_array ranges;
     } scanner;
+
+    struct {
+        bool valid;
+        float current;
+        float maximum;
+        float minimum;
+        Vector3f orientation;
+    } distance_sensors[6];
     
     // Wind Turbulence simulated Data
     float turbulence_azimuth = 0.0f;

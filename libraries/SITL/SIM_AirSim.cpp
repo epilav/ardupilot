@@ -22,6 +22,12 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
+#include <algorithm>
+#include <string>
+#include <cstring>
+#include <cassert>
+#include <vector>
+
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Logger/AP_Logger.h>
 #include <AP_HAL/utility/replace.h>
@@ -29,6 +35,62 @@
 extern const AP_HAL::HAL& hal;
 
 using namespace SITL;
+
+class ArduCopterPacketBuffer final {
+public:
+    ArduCopterPacketBuffer(const uint8_t* beg, const uint8_t* end) : _beg(beg), _end(end), _pos(beg) {}
+
+    void setIndex(std::size_t pos)
+    {
+        _pos = _beg + pos;
+    }
+
+    void skip(std::size_t offset)
+    {
+        _pos += offset;
+    }
+
+    template <typename T>
+    T get()
+    {
+        assert(_pos + sizeof(T) <= _end);
+        T r = *(reinterpret_cast<const T*>(_pos));
+        _pos += sizeof(T);
+        return r;
+    }
+
+    std::string getString()
+    {
+        auto s = _pos;
+        _pos += get<uint32_t>();
+        assert(_pos  <= _end);
+        return std::string(s, _pos);
+    }
+
+    template <typename T>
+    std::vector<T> getVector()
+    {
+        auto size = get<uint32_t>();
+        T* start = reinterpret_cast<const T*>(_pos);
+        _pos += sizeof(T) * size;
+        return std::vector<T>(start, _pos);
+    }
+
+private:
+    const uint8_t *_pos;
+    const uint8_t *_beg;
+    const uint8_t *_end;
+};
+
+template <>
+Vector3f ArduCopterPacketBuffer::get<Vector3f>()
+{
+    assert(_pos + (sizeof(float) * 3) <= _end);
+    auto p = reinterpret_cast<const float*>(_pos);
+    _pos += sizeof(float) * 3;
+    return Vector3f(p[0], p[1], p[2]);
+}
+
 
 AirSim::AirSim(const char *frame_str) :
 	Aircraft(frame_str),
@@ -108,137 +170,6 @@ void AirSim::output_rover(const struct sitl_input &input)
 }
 
 /*
-  very simple JSON parser for sensor data
-  called with pointer to one row of sensor data, nul terminated
-
-  This parser does not do any syntax checking, and is not at all
-  general purpose
-*/
-bool AirSim::parse_sensors(const char *json)
-{
-    // printf("%s\n", json);
-    for (uint16_t i=0; i<ARRAY_SIZE(keytable); i++) {
-        struct keytable &key = keytable[i];
-
-        /* look for section header */
-        const char *p = strstr(json, key.section);
-        if (!p) {
-            // we don't have this sensor
-            continue;
-        }
-        p += strlen(key.section)+1;
-
-        // find key inside section
-        p = strstr(p, key.key);
-        if (!p) {
-            printf("Failed to find key %s/%s\n", key.section, key.key);
-            return false;
-        }
-
-        p += strlen(key.key)+3;
-        switch (key.type) {
-            case DATA_UINT64:
-                *((uint64_t *)key.ptr) = strtoul(p, nullptr, 10);
-                break;
-
-            case DATA_FLOAT:
-                *((float *)key.ptr) = atof(p);
-                break;
-
-            case DATA_DOUBLE:
-                *((double *)key.ptr) = atof(p);
-                break;
-
-            case DATA_VECTOR3F: {
-                Vector3f *v = (Vector3f *)key.ptr;
-                if (sscanf(p, "[%f, %f, %f]", &v->x, &v->y, &v->z) != 3) {
-                    printf("Failed to parse Vector3f for %s/%s\n", key.section, key.key);
-                    return false;
-                }
-                break;
-            }
-
-            case DATA_VECTOR3F_ARRAY: {
-                // - array of floats that represent [x,y,z] coordinate for each point hit within the range
-                //       x0, y0, z0, x1, y1, z1, ..., xn, yn, zn
-                // example: [23.1,0.677024,1.4784,-8.97607135772705,-8.976069450378418,-8.642673492431641e-07,]
-                if (*p++ != '[') {
-                    return false;
-                }
-                uint16_t n = 0;
-                struct vector3f_array *v = (struct vector3f_array *)key.ptr;
-                while (true) {
-                    if (n >= v->length) {
-                        Vector3f *d = (Vector3f *)realloc(v->data, sizeof(Vector3f)*(n+1));
-                        if (d == nullptr) {
-                            return false;
-                        }
-                        v->data = d;
-                        v->length = n+1;
-                    }
-                    if (sscanf(p, "%f,%f,%f,", &v->data[n].x, &v->data[n].y, &v->data[n].z) != 3) {
-                        printf("Failed to parse Vector3f for %s/%s[%u]\n", key.section, key.key, n);
-                        return false;
-                    }
-                    n++;
-                    // Goto 3rd occurence of ,
-                    p = strchr(p,',');
-                    if (!p) {
-                        return false;
-                    }
-                    p++;
-                    p = strchr(p,',');
-                    if (!p) {
-                        return false;
-                    }
-                    p++;
-                    p = strchr(p,',');
-                    if (!p) {
-                        return false;
-                    }
-                    p++;
-                    // Reached end of point cloud
-                    if (p[0] == ']') {
-                        break;
-                    }
-                }
-                v->length = n;
-                break;
-            }
-
-            case DATA_FLOAT_ARRAY: {
-                // example: [18.0, 12.694079399108887]
-                if (*p++ != '[') {
-                    return false;
-                }
-                uint16_t n = 0;
-                struct float_array *v = (struct float_array *)key.ptr;
-                while (true) {
-                    if (n >= v->length) {
-                        float *d = (float *)realloc(v->data, sizeof(float)*(n+1));
-                        if (d == nullptr) {
-                            return false;
-                        }
-                        v->data = d;
-                        v->length = n+1;
-                    }
-                    v->data[n] = atof(p);
-                    n++;
-                    p = strchr(p,',');
-                    if (!p) {
-                        break;
-                    }
-                    p++;
-                }
-                v->length = n;
-                break;
-            }
-        }
-    }
-    return true;
-}
-
-/*
 	Receive new sensor data from simulator
 	This is a blocking function
 */
@@ -247,99 +178,121 @@ void AirSim::recv_fdm()
     // Receive sensor packet
     ssize_t ret = sock.recv(&sensor_buffer[sensor_buffer_len], sizeof(sensor_buffer)-sensor_buffer_len, 100);
     while (ret <= 0) {
-        printf("No sensor message received - %s\n", strerror(errno));
         ret = sock.recv(&sensor_buffer[sensor_buffer_len], sizeof(sensor_buffer)-sensor_buffer_len, 100);
     }
 
-    // convert '\n' into nul
-    while (uint8_t *p = (uint8_t *)memchr(&sensor_buffer[sensor_buffer_len], '\n', ret)) {
-        *p = 0;
+    ArduCopterPacketBuffer buffer(sensor_buffer, sensor_buffer + ret);
+    
+    // Read the TOC
+    uint16_t toc_rc         = buffer.get<uint16_t>();
+    uint16_t toc_lidar      = buffer.get<uint16_t>();
+    uint16_t toc_distance   = buffer.get<uint16_t>();
+    uint16_t toc_imu        = buffer.get<uint16_t>();
+    uint16_t toc_gps        = buffer.get<uint16_t>();
+
+    // IMU
+    // ---
+    //
+    // {
+    //     angular-velocity:        3 floats
+    //     linear-acceleration:     3 floats
+    //     roll:                    float
+    //     pitch:                   float
+    //     yaw:                     float
+    // }
+    if (toc_imu) {
+        buffer.setIndex(toc_imu);
+        gyro = buffer.get<Vector3f>();
+        accel_body = buffer.get<Vector3f>();     
+        float x = buffer.get<float>();
+        float y = buffer.get<float>();
+        float z = buffer.get<float>();
+        dcm.from_euler(x, y, z);
     }
-    sensor_buffer_len += ret;
 
-    const uint8_t *p2 = (const uint8_t *)memrchr(sensor_buffer, 0, sensor_buffer_len);
-    if (p2 == nullptr || p2 == sensor_buffer) {
-        return;
+    // GPS
+    // ---
+    //
+    // {
+    //     latitude:                double
+    //     longitude:               double
+    //     altitude:                double
+    //     velocity:                3 floats
+    // }
+    if (toc_gps) {
+        buffer.setIndex(toc_gps);
+        location.lat = buffer.get<double>() * 1.0e7;
+        location.lng = buffer.get<double>() * 1.0e7;
+        location.alt = buffer.get<double>() * 100.0f;
+        velocity_ef = buffer.get<Vector3f>();
     }
-    const uint8_t *p1 = (const uint8_t *)memrchr(sensor_buffer, 0, p2 - sensor_buffer);
-    if (p1 == nullptr) {
-        return;
+
+    // Lidars
+    // ------
+    //
+    // lidar-count: 8-bit value
+    // lidars: variable length array of 
+    // {
+    //     name-length:             16-bit value
+    //     name:                    variable length 8-bit value array
+    //     point-cloud-size:        32-bit value
+    //     point-cloud:             variable length float array
+    // }
+    scanner.points.length = 0;
+    if (toc_lidar) {
+        // TODO(epilav): (re)introduce lidars
     }
 
-    parse_sensors((const char *)(p1+1));
-
-    memmove(sensor_buffer, p2, sensor_buffer_len - (p2 - sensor_buffer));
-    sensor_buffer_len = sensor_buffer_len - (p2 - sensor_buffer);
-
-    accel_body = Vector3f(state.imu.linear_acceleration[0],
-                          state.imu.linear_acceleration[1],
-                          state.imu.linear_acceleration[2]);
-
-    gyro = Vector3f(state.imu.angular_velocity[0],
-                    state.imu.angular_velocity[1],
-                    state.imu.angular_velocity[2]);
-
-    velocity_ef = Vector3f(state.velocity.world_linear_velocity[0],
-                           state.velocity.world_linear_velocity[1],
-                           state.velocity.world_linear_velocity[2]);
-
-    location.lat = state.gps.lat * 1.0e7;
-    location.lng = state.gps.lon * 1.0e7;
-    location.alt = state.gps.alt * 100.0f;
-
-    dcm.from_euler(state.pose.roll, state.pose.pitch, state.pose.yaw);
-
-    if (last_timestamp) {
-        int deltat = state.timestamp - last_timestamp;
-        time_now_us += deltat;
-
-        if (deltat > 0 && deltat < 100000) {
-            if (average_frame_time < 1) {
-                average_frame_time = deltat;
-            }
-            average_frame_time = average_frame_time * 0.98 + deltat * 0.02;
+    // Distance sensors
+    // ----------------
+    //
+    // distance-conut: 8-bit value
+    // distance-sensors: variable length array of 
+    // {
+    //     name-length:             16-bit value
+    //     name:                    variable length 8-bit value array
+    //     distance:                float
+    //     max-distance:            float
+    //     min-distance:            float
+    //     roll:                    float
+    //     pitch:                   float
+    //     yaw:                     float
+    // }
+    //
+    // WARNING!
+    // Note that we're limiting the total number of distance sensors to 6. The assumption here is that
+    // we have one sensor per side, I suppose. This will work for our purposes, but this is clearly not
+    // a good generic solution.
+    if (toc_distance) {
+        buffer.setIndex(toc_distance);
+        uint8_t i = 0, n = std::min(buffer.get<uint8_t>(), static_cast<uint8_t>(6));
+        for (; i < n; i++) {
+            buffer.skip(buffer.get<uint16_t>());    // Currently we don't care about the name
+            distance_sensors[i].valid = true;
+            distance_sensors[i].current = buffer.get<float>();
+            distance_sensors[i].maximum = buffer.get<float>();
+            distance_sensors[i].minimum = buffer.get<float>();
+            distance_sensors[i].orientation = buffer.get<Vector3f>();
+        }
+        for (; i < 6; i++) {
+            distance_sensors[i].valid = false;
         }
     }
 
-    scanner.points = state.lidar.points;
-
-    rcin_chan_count = state.rc.rc_channels.length < 8 ? state.rc.rc_channels.length : 8;
-    for (uint8_t i=0; i < rcin_chan_count; i++) {
-        rcin[i] = state.rc.rc_channels.data[i];
+    // RC
+    // --
+    //
+    // {
+    //     channel-count:           8-bit value
+    //     channel-values:          variable length float array
+    // }
+    if (toc_rc) {
+        buffer.setIndex(toc_rc);
+        uint8_t i = 0, n = std::min(buffer.get<uint8_t>(), static_cast<uint8_t>(8));
+        for (; i < n; i++) {
+            rcin[i] = buffer.get<float>();
+        }
     }
-
-#if 0
-    AP::logger().Write("ASM1", "TimeUS,TUS,R,P,Y,GX,GY,GZ",
-                       "QQffffff",
-                       AP_HAL::micros64(),
-                       state.timestamp,
-                       degrees(state.pose.roll),
-                       degrees(state.pose.pitch),
-                       degrees(state.pose.yaw),
-                       degrees(gyro.x),
-                       degrees(gyro.y),
-                       degrees(gyro.z));
-
-    Vector3f velocity_bf = dcm.transposed() * velocity_ef;
-    position = home.get_distance_NED(location);
-
-    AP::logger().Write("ASM2", "TimeUS,AX,AY,AZ,VX,VY,VZ,PX,PY,PZ,Alt,SD",
-                       "Qfffffffffff",
-                       AP_HAL::micros64(),
-                       accel_body.x,
-                       accel_body.y,
-                       accel_body.z,
-                       velocity_bf.x,
-                       velocity_bf.y,
-                       velocity_bf.z,
-                       position.x,
-                       position.y,
-                       position.z,
-                       state.gps.alt,
-                       velocity_ef.z);
-#endif
-
-    last_timestamp = state.timestamp;
 }
 
 /*
@@ -361,19 +314,4 @@ void AirSim::update(const struct sitl_input &input)
 
     // update magnetic field
     update_mag_field_bf();
-
-    report_FPS();
-}
-
-/*
-  report frame rates
- */
-void AirSim::report_FPS(void)
-{
-    if (frame_counter++ % 1000 == 0) {
-        if (last_frame_count != 0) {
-            printf("FPS avg=%.2f\n", 1.0e6/average_frame_time);
-        }
-        last_frame_count = state.timestamp;
-    }
 }

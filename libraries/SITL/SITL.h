@@ -58,6 +58,15 @@ struct sitl_fdm {
         struct vector3f_array points;
         struct float_array ranges;
     } scanner;
+
+    // Data from the simulated distance sensor(s), if available.
+    struct {
+        bool valid;
+        float current;
+        float maximum;
+        float minimum;
+        Vector3f orientation;
+    } distance[6];
 };
 
 // number of rc output channels

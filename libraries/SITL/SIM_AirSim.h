@@ -72,74 +72,21 @@ private:
 
 	SocketAPM sock;
 
+#if 0
     double average_frame_time;
     uint64_t frame_counter;
     uint64_t last_frame_count;
     uint64_t last_timestamp;
-
+#endif
     void output_copter(const struct sitl_input &input);
     void output_rover(const struct sitl_input &input);
     void recv_fdm();
+#if 0
     void report_FPS(void);
-
-	bool parse_sensors(const char *json);
-
+#endif
 	// buffer for parsing pose data in JSON format
     uint8_t sensor_buffer[65000];
     uint32_t sensor_buffer_len;
-
-	enum data_type {
-		DATA_UINT64,
-        DATA_FLOAT,
-        DATA_DOUBLE,
-        DATA_VECTOR3F,
-        DATA_VECTOR3F_ARRAY,
-        DATA_FLOAT_ARRAY,
-    };
-
-    struct {
-        uint64_t timestamp;
-        struct {
-            Vector3f angular_velocity;
-            Vector3f linear_acceleration;
-        } imu;
-        struct {
-            double lat, lon, alt;
-        } gps;
-        struct {
-            float roll, pitch, yaw;
-        } pose;
-        struct {
-            Vector3f world_linear_velocity;
-        } velocity;
-        struct {
-            struct vector3f_array points;
-        } lidar;
-        struct {
-            struct float_array rc_channels;
-        } rc;
-    } state;
-
-    // table to aid parsing of JSON sensor data
-    struct keytable {
-        const char *section;
-        const char *key;
-        void *ptr;
-        enum data_type type;
-    } keytable[12] = {
-        { "", "timestamp", &state.timestamp, DATA_UINT64 },
-        { "imu", "angular_velocity",    &state.imu.angular_velocity, DATA_VECTOR3F },
-        { "imu", "linear_acceleration", &state.imu.linear_acceleration, DATA_VECTOR3F },
-        { "gps", "lat", &state.gps.lat, DATA_DOUBLE },
-        { "gps", "lon", &state.gps.lon, DATA_DOUBLE },
-        { "gps", "alt", &state.gps.alt, DATA_DOUBLE },
-        { "pose", "roll",  &state.pose.roll, DATA_FLOAT },
-        { "pose", "pitch", &state.pose.pitch, DATA_FLOAT },
-        { "pose", "yaw",   &state.pose.yaw, DATA_FLOAT },
-        { "velocity", "world_linear_velocity", &state.velocity.world_linear_velocity, DATA_VECTOR3F },
-        { "lidar", "point_cloud", &state.lidar.points, DATA_VECTOR3F_ARRAY },
-        { "rc", "channels", &state.rc.rc_channels, DATA_FLOAT_ARRAY },
-    };
 };
 
 }

@@ -360,6 +360,15 @@ void Aircraft::fill_fdm(struct sitl_fdm &fdm)
     fdm.scanner.points = scanner.points;
     fdm.scanner.ranges = scanner.ranges;
 
+    // copy the distance sensor results
+    for (int i = 0; i < 6; i++) {
+        fdm.distance[i].valid = distance_sensors[i].valid;
+        fdm.distance[i].current = distance_sensors[i].current;
+        fdm.distance[i].maximum = distance_sensors[i].maximum;
+        fdm.distance[i].minimum = distance_sensors[i].minimum;
+        fdm.distance[i].orientation = distance_sensors[i].orientation;
+    }
+
     if (smoothing.enabled) {
         fdm.xAccel = smoothing.accel_body.x;
         fdm.yAccel = smoothing.accel_body.y;

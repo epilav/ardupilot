@@ -26,6 +26,27 @@ extern const AP_HAL::HAL& hal;
 // update the state of the sensor
 void AP_Proximity_AirSimSITL::update(void)
 {
+    set_status(AP_Proximity::Status::Good);
+    
+    for (int i = 0; i < PROXIMITY_NUM_SECTORS; i++) {
+        _distance_valid[i] = false;
+        _distance[i] = -1.0f;
+    }
+
+    for (int i = 0; i < 6; i++) {
+        // Get the angle in degrees and determine the sector index from it.
+        float angle = wrap_360(sitl->state.distance[i].orientation.z * (180.0f / M_PI));
+        uint8_t sector_index = convert_angle_to_sector(angle);
+
+        // Update the distance if the reading is valid.
+        if (sitl->state.distance[i].valid) {
+            _angle[sector_index] = angle;
+            _distance_valid[sector_index] = true;
+            _distance[sector_index] = sitl->state.distance[i].current;
+            update_boundary_for_sector(sector_index, true);
+        }
+    }
+#if 0
     SITL::vector3f_array &points = sitl->state.scanner.points;
     if (points.length == 0) {
         set_status(AP_Proximity::Status::NoData);
@@ -71,13 +92,11 @@ void AP_Proximity_AirSimSITL::update(void)
             _distance_valid[sector] = false;
         }
     }
+#endif
 
-#if 0
-    printf("npoints=%u\n", points.length);
     for (uint16_t i=0; i<PROXIMITY_NUM_SECTORS; i++) {
         printf("sector[%u] ang=%.1f dist=%.1f\n", i, _angle[i], _distance[i]);
     }
-#endif
 }
 
 // get maximum and minimum distances (in meters) of primary sensor
